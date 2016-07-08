@@ -5,9 +5,11 @@
 #include <random>
 #include <ctime>
 #include <unordered_set>
+#include <thread>
+#include <chrono>
+
 #include <arpa/inet.h>
 #include <pcap.h>
-
 
 #include "../bitshuffler/bit_shuffler.hpp"
 #include "../netlayer/packet_parser.hpp"
@@ -109,7 +111,7 @@ int main(int argc, char **argv)
     sscanf(argv[4], "%d.%d.%d.%d", &ip1, &ip2, &ip3, &ip4);
     GlobalIp = (ip1<<24) | (ip2<<16) | (ip3<<8) | ip4;
     
-    descr = pcap_open_live(argv[1],BUFSIZE,1, 2 /*ms*/,errbuf);
+    descr = pcap_open_live(argv[1],BUFSIZE,1, 1/*ms*/,errbuf);
 
     if(descr == NULL)
     {
@@ -119,11 +121,13 @@ int main(int argc, char **argv)
 
     uint32_t sentIp = 0;
     uint32_t waiting = 0;
+    const uint32_t MaxWaiting = 2000; //2 seconds
     const uint32_t MaxSent = 0x1000000;
     uint16_t TargetPort = atoi( argv[5] );
     
-    while (sentIp < MaxSent) {
-        for (uint32_t i = 0; i < 5000 && sentIp < MaxSent; ++ i) {
+    
+    while (sentIp < MaxSent || waiting <= MaxWaiting) {
+        for (uint32_t i = 0; i < 6000 && sentIp < MaxSent; ++ i) {
             uint32_t nd = bsmain.getNumber(sentIp++);
             std::string out = generatePayload( argv[2], argv[3], GlobalIp, (10<<24) | nd, TargetPort );
             
@@ -137,8 +141,12 @@ int main(int argc, char **argv)
             if(packet == NULL)
             {/* dinna work *sob* */
                 //printf("Didn't grab packet\n");
-                if (sentIp < MaxSent || waiting++ <= 2500)
+                if (sentIp < MaxSent || waiting++ <= MaxWaiting) {
+                    //if (waiting > 0) 
+                        //std::this_thread::sleep_for (std::chrono::milliseconds(10));
+                        //cerr << "\r" << waiting << endl;
                     break;
+                }
             }
             
             else if (hdr.len >= sizeof(Combined)) {
